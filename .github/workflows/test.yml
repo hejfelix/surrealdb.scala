@@ -22,13 +22,9 @@ jobs:
         java-version: '16'
         distribution: 'adopt'
         cache: 'sbt'
+    - name: Run SurrealDB
+      run: docker run -it -d --rm --name surrealdb -p 8000:8000 surrealdb/surrealdb start -u root -p root
     - name: Run tests
       run: sbt test
-
-    services:
-      surrealdb:
-        image: surrealdb/surrealdb:1.0.0-beta.8
-        env:
-          USER: root
-          PASS: root
-          LOG: debug
+    - name: Stop SurrealDB
+      run: docker stop -t 1 surrealdb

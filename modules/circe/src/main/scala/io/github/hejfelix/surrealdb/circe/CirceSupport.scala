@@ -6,10 +6,13 @@ import io.circe.parser.decode
 import io.circe.syntax.*
 import io.circe.{Decoder, DecodingFailure, Encoder, Json}
 import io.github.hejfelix.surrealdb.*
+import io.github.hejfelix.surrealdb.WebsocketConnection.ShowCompact
 
 import scala.annotation.nowarn
 
 object CirceSupport:
+
+  given ShowCompact[Json] = _.noSpaces
 
   given Decoder[Null] = cursor =>
     cursor.as[Json].flatMap {

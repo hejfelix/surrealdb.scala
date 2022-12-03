@@ -20,6 +20,7 @@ lazy val core = project
       "com.softwaremill.sttp.client3" %% "core"        % "3.8.3",
       "co.fs2"                        %% "fs2-core"    % "3.4.0",
       "org.typelevel"                 %% "cats-effect" % "3.4.1",
+      "org.legogroup"                 %% "woof-core"   % "0.4.7",
     ),
   )
 
@@ -40,9 +41,10 @@ lazy val client = project
   .settings(commonSettings)
   .settings(
     libraryDependencies ++= Seq(
-      "com.disneystreaming"           %% "weaver-cats"  % "0.8.1"  % Test,
-      "com.softwaremill.sttp.client3" %% "fs2"          % "3.8.3"  % Test,
-      "org.slf4j"                      % "slf4j-simple" % "1.7.36" % Test
+      "com.disneystreaming"           %% "weaver-cats"       % "0.8.1"  % Test,
+      "com.disneystreaming"           %% "weaver-scalacheck" % "0.8.1"  % Test,
+      "com.softwaremill.sttp.client3" %% "fs2"               % "3.8.3"  % Test,
+      "org.slf4j"                      % "slf4j-simple"      % "1.7.36" % Test
     ),
     testFrameworks += new TestFramework("weaver.framework.CatsEffect")
   )

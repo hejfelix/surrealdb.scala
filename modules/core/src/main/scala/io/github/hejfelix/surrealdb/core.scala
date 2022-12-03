@@ -4,6 +4,7 @@ import cats.effect.std.Console
 import cats.syntax.all.*
 import cats.{Applicative, Show}
 import fs2.{Chunk, Pipe, Stream}
+import org.legogroup.woof.{*, given}
 import sttp.capabilities.*
 import sttp.client3.*
 import sttp.model.Uri
@@ -105,9 +106,16 @@ end RpcCommand
 
 object WebsocketConnection:
 
+  /** Something we can actually send over the socket
+    */
+  trait ShowCompact[A]:
+    def showCompact(a: A): String
+
+  extension [A: ShowCompact](a: A) def showCompact = summon[ShowCompact[A]].showCompact(a)
+
   type Fs2Streams[F[_], S] = Streams[S] { type BinaryStream = Stream[F, Byte]; type Pipe[A, B] = fs2.Pipe[F, A, B] }
 
-  def combinedTextFrames[F[_]: Applicative: Console]: Pipe[F, WebSocketFrame.Data[?], String] =
+  def combinedTextFrames[F[_]: Applicative: Logger]: Pipe[F, WebSocketFrame.Data[?], String] =
     _.collect { case tf: WebSocketFrame.Text => tf }
       .flatMap { tf =>
         if tf.finalFragment then Stream(tf.copy(finalFragment = false), tf.copy(payload = ""))
@@ -115,42 +123,42 @@ object WebsocketConnection:
       }
       .split(_.finalFragment)
       .map(chunks => chunks.map(_.payload).toList.mkString)
-      .evalTap(Console[F].println)
+      .evalTap(s => Logger[F].debug(s"<<< $s"))
 
-  def asRpcResponses[F[_]: Applicative: Console, J](using
+  def asRpcResponses[F[_]: Applicative: Logger, J](using
       JsonDecoder[RpcResponse[J]]
   ): Pipe[F, WebSocketFrame.Data[?], RpcResponse[J]] =
     combinedTextFrames.andThen(
       _.map(summon[JsonDecoder[RpcResponse[J]]].decode)
-        .evalTap(Console[F].println)
         .evalMapFilter {
           case Right(value) => value.some.pure
-          case Left(value)  => Console[F].errorln(s"Failed to decode: ${value}").as(None)
+          case Left(value)  => Logger[F].error(s"Failed to decode: ${value}").as(None)
         }
     )
 
   def wrap[F[_], J]: Pipe[F, (RpcRequestId, RpcCommand[J]), RpcRequest[J]] =
     _.map((id, command) => RpcRequest(RpcRequestId(id.toString), command.methodName, command.parameters))
 
-  def connect[F[_]: Applicative: Console, S, J](
+  def connect[F[_]: Applicative: Logger, S, J](
       host: Uri,
       s: Fs2Streams[F, S],
       pipe: fs2.Pipe[F, RpcResponse[J], (RpcRequestId, RpcCommand[J])]
   )(using
       JsonEncoder[RpcRequest[J], J],
       JsonDecoder[RpcResponse[J]],
-      Show[J]
+      ShowCompact[J]
   ): RequestT[Identity, Unit, S & WebSockets] =
-    println(s"Connecting to $host")
     val rpcPipe: fs2.Pipe[F, WebSocketFrame.Data[?], RpcResponse[J]] = asRpcResponses[F, J]
     val pip2: Stream[F, Data[?]] => Stream[F, WebSocketFrame] =
       rpcPipe
         .andThen(pipe)
         .andThen(wrap[F, J])
-        .andThen(_.map(summon[JsonEncoder[RpcRequest[J], J]].encode).map(txt =>
-          println(s">>>> WIRE SEND: $txt")
-          WebSocketFrame.Text(txt.show, true, None)
-        ))
+        .andThen(
+          _.map(summon[JsonEncoder[RpcRequest[J], J]].encode).evalMap(json =>
+            Logger[F].debug(s">>> ${json.showCompact}") *>
+              WebSocketFrame.Text(json.showCompact, true, None).pure
+          )
+        )
     basicRequest.post(host).response(asWebSocketStreamAlways(s)(pip2))
   end connect
 

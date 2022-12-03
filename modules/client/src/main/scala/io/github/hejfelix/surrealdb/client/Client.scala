@@ -9,17 +9,18 @@ import cats.{Applicative, ApplicativeThrow, Functor, MonadThrow, Show, Traverse}
 import fs2.Stream
 import fs2.concurrent.{Signal, SignallingRef, Topic}
 import io.github.hejfelix.surrealdb.*
-import io.github.hejfelix.surrealdb.WebsocketConnection.Fs2Streams
+import io.github.hejfelix.surrealdb.WebsocketConnection.{Fs2Streams, ShowCompact}
 import sttp.capabilities.{Streams, WebSockets}
 import sttp.client3.SttpBackend
 import sttp.model.Uri
+import org.legogroup.woof.Logger
 
 import scala.concurrent.duration.*
 
 case class ClientConfiguration(auth: Authentication, host: Uri, namespace: String, database: String)
 case class Authentication(user: String, password: String)
 
-private class Client[F[_]: Async: ApplicativeThrow: Console, J](
+private class Client[F[_]: Async: ApplicativeThrow, J](
     configuration: ClientConfiguration,
     outgoingTopic: Topic[F, (RpcRequestId, RpcCommand[J])],
     callbacks: Ref[F, Map[RpcRequestId, RpcResponse[J] => F[Unit]]],
@@ -30,9 +31,7 @@ private class Client[F[_]: Async: ApplicativeThrow: Console, J](
     for
       nextRequestId <- counter.getAndUpdate(_.increment)
       _             <- outgoingTopic.publish1(nextRequestId -> rpcCommand)
-      _ = println(s"Sent $nextRequestId, $rpcCommand")
       a <- Async[F].async[RpcResponse.Result[J]] { onComplete =>
-        println(s"Registering callback for $nextRequestId ($rpcCommand)")
         val completer: RpcResponse[J] => F[Unit] = _ match
           case r @ RpcResponse.Result(id, result) => Sync[F].delay(onComplete(r.asRight))
           case e @ RpcResponse.Error(id, error)   => Sync[F].delay(onComplete(Exception(e.toString).asLeft))
@@ -71,11 +70,11 @@ end Client
 
 object Client:
 
-  def make[F[_]: Async: Console, S, J](
+  def make[F[_]: Async: Logger, S, J](
       configuration: ClientConfiguration,
       s: Fs2Streams[F, S],
       backend: SttpBackend[F, S & WebSockets]
-  )(using JsonEncoder[RpcRequest[J], J], JsonDecoder[RpcResponse[J]], Show[J]): Resource[F, Client[F, J]] =
+  )(using JsonEncoder[RpcRequest[J], J], JsonDecoder[RpcResponse[J]], ShowCompact[J]): Resource[F, Client[F, J]] =
     for
       callbacks      <- Resource.eval(Ref[F].of(Map.empty[RpcRequestId, RpcResponse[J] => F[Unit]]))
       topic          <- Resource.eval(Topic[F, (RpcRequestId, RpcCommand[J])])

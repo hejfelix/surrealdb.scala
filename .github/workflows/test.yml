@@ -32,5 +32,3 @@ jobs:
           USER: root
           PASS: root
           LOG: debug
-        ports: 
-          - 8000:8000

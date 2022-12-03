@@ -56,8 +56,10 @@ object ClientSuite extends IOSuite:
   case class Person(name: String, age: Int, cool: Boolean) derives Encoder.AsObject
   given Decoder[Person] = deriveDecoder
 
+  lazy val hostName = if sys.env.contains("CI") then "surrealdb" else "localhost"
+
   lazy val configuration =
-    ClientConfiguration(Authentication("root", "root"), uri"ws://localhost:8000/rpc", "test", "test")
+    ClientConfiguration(Authentication("root", "root"), uri"ws://$hostName:8000/rpc", "test", "test")
 
   test("delete") { client =>
 
